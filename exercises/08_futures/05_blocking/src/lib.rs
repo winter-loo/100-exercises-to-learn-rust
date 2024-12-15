@@ -14,12 +14,13 @@ pub async fn echo(listener: TcpListener) -> Result<(), anyhow::Error> {
         let mut socket = socket.into_std()?;
         socket.set_nonblocking(false)?;
         let mut buffer = Vec::new();
-        // tokio::task::spawn_blocking(move || {
-        eprintln!("read [{:#?}]", peer_addr);
+        tokio::task::spawn_blocking(move || {
+            eprintln!("read [{:#?}]", peer_addr);
             socket.read_to_end(&mut buffer)?;
-        eprintln!("write [{:#?}]", peer_addr);
-            socket.write_all(&buffer)?;
-        // }).await??;
+            eprintln!("write [{:#?}]", peer_addr);
+            socket.write_all(&buffer)
+        })
+        .await??;
     }
 }
 
@@ -30,7 +31,6 @@ mod tests {
     use std::panic;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::task::JoinSet;
-    use console_subscriber;
 
     async fn bind_random() -> (TcpListener, SocketAddr) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -41,8 +41,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_echo() {
-        console_subscriber::init();
-
         let (listener, addr) = bind_random().await;
         tokio::spawn(echo(listener));
 
