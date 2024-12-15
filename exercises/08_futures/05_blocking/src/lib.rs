@@ -7,12 +7,19 @@ use tokio::net::TcpListener;
 
 pub async fn echo(listener: TcpListener) -> Result<(), anyhow::Error> {
     loop {
+        eprintln!("accepting...");
         let (socket, _) = listener.accept().await?;
+        let peer_addr = socket.peer_addr().unwrap();
+        eprintln!("accepted [{:#?}]", peer_addr);
         let mut socket = socket.into_std()?;
         socket.set_nonblocking(false)?;
         let mut buffer = Vec::new();
-        socket.read_to_end(&mut buffer)?;
-        socket.write_all(&buffer)?;
+        // tokio::task::spawn_blocking(move || {
+        eprintln!("read [{:#?}]", peer_addr);
+            socket.read_to_end(&mut buffer)?;
+        eprintln!("write [{:#?}]", peer_addr);
+            socket.write_all(&buffer)?;
+        // }).await??;
     }
 }
 
@@ -23,15 +30,19 @@ mod tests {
     use std::panic;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::task::JoinSet;
+    use console_subscriber;
 
     async fn bind_random() -> (TcpListener, SocketAddr) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
+        eprintln!("listening on {addr:#?}");
         (listener, addr)
     }
 
     #[tokio::test]
     async fn test_echo() {
+        console_subscriber::init();
+
         let (listener, addr) = bind_random().await;
         tokio::spawn(echo(listener));
 
@@ -44,15 +55,21 @@ mod tests {
         let mut join_set = JoinSet::new();
 
         for request in requests {
+            eprintln!("spawn for request: <{request}>");
             join_set.spawn(async move {
+                eprintln!("connecting...");
                 let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+                let local_addr = socket.local_addr().unwrap();
+                eprintln!("connected...{:#?}", local_addr);
                 let (mut reader, mut writer) = socket.split();
 
+                eprintln!("send the request[{:#?}]: <{request}>", local_addr);
                 // Send the request
                 writer.write_all(request.as_bytes()).await.unwrap();
                 // Close the write side of the socket
                 writer.shutdown().await.unwrap();
 
+                eprintln!("read the response[{:#?}] of <{request}>", local_addr);
                 // Read the response
                 let mut buf = Vec::with_capacity(request.len());
                 reader.read_to_end(&mut buf).await.unwrap();
