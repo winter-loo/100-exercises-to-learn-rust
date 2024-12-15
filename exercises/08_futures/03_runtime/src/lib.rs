@@ -2,15 +2,48 @@
 //  accept connections on both of them concurrently, and always reply to clients by sending
 //  the `Display` representation of the `reply` argument as a response.
 use std::fmt::Display;
+use std::panic;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 
 pub async fn fixed_reply<T>(first: TcpListener, second: TcpListener, reply: T)
 where
     // `T` cannot be cloned. How do you share it between the two server tasks?
     T: Display + Send + Sync + 'static,
 {
-    todo!()
+    let reply = Box::new(format!("{}", reply));
+    let reply2 = reply.clone();
+
+    // create a static lifetime
+    let reply = Box::leak(reply);
+    let reply2 = Box::leak(reply2);
+
+    let mut join_set = JoinSet::new();
+    join_set.spawn(async move {
+        loop {
+            // see [panic boundary] section
+            // In short, this panic will be captured by `join_set.join_next().await`
+            let (mut socket, _) = first.accept().await.unwrap();
+            let (_, mut tx) = socket.split();
+            let _ = tx.write_all(reply.as_bytes()).await;
+        }
+    });
+    join_set.spawn(async move {
+        loop {
+            let (mut socket, _) = second.accept().await.unwrap();
+            let (_, mut tx) = socket.split();
+            let _ = tx.write_all(reply2.as_bytes()).await;
+        }
+    });
+
+    while let Some(outcome) = join_set.join_next().await {
+        if let Err(e) = outcome {
+            if let Ok(reason) = e.try_into_panic() {
+                panic::resume_unwind(reason);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
