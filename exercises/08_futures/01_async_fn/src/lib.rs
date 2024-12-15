@@ -11,7 +11,61 @@ use tokio::net::TcpListener;
 // - `tokio::net::TcpStream::split` to obtain a reader and a writer from the socket
 // - `tokio::io::copy` to copy data from the reader to the writer
 pub async fn echo(listener: TcpListener) -> Result<(), anyhow::Error> {
-    todo!()
+    loop {
+        match listener.accept().await {
+            Ok((client, _)) => {
+                tokio::spawn(async move {
+                    loop {
+                        // Wait for the socket to be readable
+                        if let Err(_) = client.readable().await {
+                            break;
+                        }
+
+                        // Creating the buffer **after** the `await` prevents it from
+                        // being stored in the async task.
+                        let mut buf = [0; 4096];
+
+                        // Try to read data, this may still fail with `WouldBlock`
+                        // if the readiness event is a false positive.
+                        let n = match client.try_read(&mut buf) {
+                            Ok(0) => break,
+                            Ok(n) => n,
+                            Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
+                                continue;
+                            }
+                            Err(_) => {
+                                break;
+                            }
+                        };
+
+                        // Wait for the socket to be writable
+                        if let Err(_) = client.writable().await {
+                            break;
+                        }
+
+                        // Try to write data, this may still fail with `WouldBlock`
+                        // if the readiness event is a false positive.
+                        match client.try_write(&buf[..n]) {
+                            Ok(_) => {
+                                continue;
+                            }
+                            Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
+                                continue;
+                            }
+                            Err(_) => {
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
+            Err(e) => {
+                println!("couldn't get client: {:?}", e);
+                break;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
