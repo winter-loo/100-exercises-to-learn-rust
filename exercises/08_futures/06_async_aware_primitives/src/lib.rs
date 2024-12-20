@@ -27,6 +27,8 @@ pub async fn pong(mut receiver: mpsc::Receiver<Message>) {
                 .unwrap();
             receiver = new_receiver;
         }
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        eprintln!("pong still running");
     }
 }
 
@@ -35,7 +37,7 @@ mod tests {
     use crate::{pong, Message};
     use std::sync::mpsc;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn ping() {
         let (sender, receiver) = mpsc::channel();
         let (response_sender, response_receiver) = mpsc::channel();
