@@ -14,6 +14,7 @@ pub struct Message {
 /// Replies with `pong` to any message it receives, setting up a new
 /// channel to continue communicating with the caller.
 pub async fn pong(mut receiver: mpsc::Receiver<Message>) {
+    eprintln!("pong started");
     loop {
         if let Ok(msg) = receiver.recv() {
             println!("Pong received: {}", msg.payload);
@@ -44,9 +45,9 @@ mod tests {
                 response_channel: response_sender,
             })
             .unwrap();
-
+            eprintln!("spawning task");
         tokio::spawn(pong(receiver));
-
+            eprintln!("wait for response");
         let answer = response_receiver.recv().unwrap().payload;
         assert_eq!(answer, "pong");
     }
